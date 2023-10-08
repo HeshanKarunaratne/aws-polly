@@ -1,0 +1,19 @@
+service: talking-backend 
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  iam: 
+    role: arn:aws:iam::560135145142:role/polly-s3-role
+  profile: heshan
+
+functions:
+  hello:
+    handler: handler2.speak
+    events:
+      - http:
+          path: speak
+          method: post
+          cors: true
