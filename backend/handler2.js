@@ -1,74 +1,38 @@
-const { Polly, S3 } = require('@aws-sdk/client-polly');
-const { S3Client, PutObjectCommand, GetObjectCommand, GetObjectUrlCommand } = require('@aws-sdk/client-s3');
+const { PollyClient, StartSpeechSynthesisTaskCommand } = require('@aws-sdk/client-polly');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const crypto = require("crypto");
 
-const pollyClient = new Polly({ region: 'us-east-1' });
-const s3Client = new S3Client({ region: 'us-east-1' });
+const region = "us-east-1";
+const pollyClient = new PollyClient({ region });
+const s3Client = new S3Client({ region });
+const bucketName = "polly-example-1";
+const format = "mp3";
+let key;
 
 module.exports.speak = async (event, context) => {
+
   try {
-    const data = JSON.parse(event.body);
-    const pollyParams = {
-      OutputFormat: 'mp3',
-      Text: data.text,
-      VoiceId: data.voice
+    const input = {
+      OutputFormat: format,
+      OutputS3BucketName: bucketName,
+      Text: "Hello, this is a sample text to be synthesized using Amazon Polly",
+      VoiceId: "Bianca"
     };
+    const { SynthesisTask } = await pollyClient.send(new StartSpeechSynthesisTaskCommand(input));
+    console.log("SpeechSynthesis Complete");
 
-    // 1. Getting the audio stream for the text that the user entered
-    const pollyResponse = await pollyClient.synthesizeSpeech(pollyParams);
-
-    const audioStream = pollyResponse.AudioStream;
-    const key = "trwts4524ss";
-    const s3BucketName = 'polly-example-1'; // Replace with your S3 bucket name
-
-    // 2. Saving the audio stream to S3
-    const audioBuffer = Buffer.from(await streamToBuffer(audioStream));
-    const s3Params = {
-      Bucket: s3BucketName,
-      Key: key + '.mp3',
-      Body: audioBuffer
+    key = crypto.randomBytes(16).toString("hex");
+    const s3Input = {
+      Bucket: bucketName,
+      Key: key + "." + format,
+      Body: SynthesisTask.OutputUri
     };
+    const s3Response = await s3Client.send(new PutObjectCommand(s3Input));
+    console.log("Pushed to S3 complete");
 
-    await s3Client.send(new PutObjectCommand(s3Params));
 
-    // 3. Getting a signed URL for the saved mp3 file
-    const s3UrlParams = {
-      Bucket: s3BucketName,
-      Key: key + '.mp3',
-    };
-    const url = await s3Client.send(new GetObjectUrlCommand(s3UrlParams));
-
-    // Sending the result back to the user
-    const result = {
-      bucket: s3BucketName,
-      key: key + '.mp3',
-      url: url,
-    };
-
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify(result)
-    };
-  } catch (err) {
-    return {
-      statusCode: 500,
-      headers: {
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify(err)
-    };
+  } catch (error) {
+    console.error("Error Occurred:", error);
   }
-
 
 };
-
-// Helper function to convert a readable stream to a buffer
-async function streamToBuffer(stream) {
-  const chunks = [];
-  for await (const chunk of stream) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
-}
